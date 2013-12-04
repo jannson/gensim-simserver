@@ -39,12 +39,23 @@ from sqlitedict import SqliteDict # needs sqlitedict: run "sudo easy_install sql
 logger = logging.getLogger('gensim.similarities.simserver')
 
 
-TOP_SIMS = 100 # when precomputing similarities, only consider this many "most similar" documents
+TOP_SIMS = 50 # when precomputing similarities, only consider this many "most similar" documents
 SHARD_SIZE = 65536 # spill index shards to disk in SHARD_SIZE-ed chunks of documents
 DEFAULT_NUM_TOPICS = 400 # use this many topics for topic models unless user specified a value
 JOURNAL_MODE = 'OFF' # don't keep journals in sqlite dbs
 
+HARDLINK_SESSIONS = True # when cloning an index, use hardlink for better performance (only works on UNIX systems)
+if HARDLINK_SESSIONS:
+    import __builtin__
+    _open = __builtin__.open
 
+    def my_open(name, mode='r', *args, **kwargs):
+        """Simulate copy-on-write, by deleting the file first if it exists"""
+        if 'w' in mode and os.path.exists(name):
+            os.remove(name)
+        return _open(name, mode, *args, **kwargs)
+
+    __builtin__.open = my_open
 
 def merge_sims(oldsims, newsims, clip=None):
     """Merge two precomputed similarity lists, truncating the result to `clip` most similar items."""
@@ -902,13 +913,17 @@ class SessionServer(gensim.utils.SaveLoad):
 
         logger.info("opening a new session")
         logger.info("removing %s" % self.loc_session)
-        try:
+        if os.path.isdir(self.loc_session):
             shutil.rmtree(self.loc_session)
-        except:
-            logger.info("failed to delete %s" % self.loc_session)
         logger.info("cloning server from %s to %s" %
                     (self.loc_stable, self.loc_session))
-        shutil.copytree(self.loc_stable, self.loc_session)
+        if HARDLINK_SESSIONS:
+            # on unix systems, copy by hardlinking files
+            # requires overriding built-in open('w') -- see `my_open` above
+            gensim.utils.copytree_hardlink(self.loc_stable, self.loc_session)
+        else:
+            # (much) less efficient than hardlinking, but safer
+            shutil.copytree(self.loc_stable, self.loc_session)
         self.session = SimServer(self.loc_session, use_locks=self.use_locks)
         self.lock_update.acquire() # no other thread can call any modification methods until commit/rollback
 

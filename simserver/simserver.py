@@ -234,9 +234,12 @@ class SimIndex(gensim.utils.SaveLoad):
     def sims_by_id(self, docid):
         """Find the most similar documents to the (already indexed) document with `docid`."""
         result = self.id2sims.get(docid, None)
+        #print 'hear 237', result
         if result is None:
             self.qindex.num_best = self.topsims
+            #print 'docid id2pos',docid, self.id2pos[docid]
             sims = self.qindex.similarity_by_id(self.id2pos[docid])
+            #print 'sims', sims
             result = self.sims2scores(sims)
         return result
 
@@ -409,6 +412,7 @@ class SimModel(gensim.utils.SaveLoad):
     def docs2vecs(self, docs):
         """Convert multiple SimilarityDocuments to vectors (batch version of doc2vec)."""
         bows = (self.dictionary.doc2bow(doc['tokens']) for doc in docs)
+        #print self.method,[doc for doc in docs][0]['tokens']
         if self.method == 'lsi':
             return self.lsi[self.tfidf[bows]]
         elif self.method == 'lda':
@@ -749,14 +753,18 @@ class SimServer(object):
         if isinstance(doc, basestring):
             # query by direct document id
             docid = doc
+            #logger.info("hear 752")
             if self.opt_index is not None and docid in self.opt_index:
+                #logger.info("hear 754")
                 sims_opt = self.opt_index.sims_by_id(docid)
                 if self.fresh_index is not None:
                     vec = self.opt_index.vec_by_id(docid)
                     sims_fresh = self.fresh_index.sims_by_vec(vec, normalize=False)
             elif self.fresh_index is not None and docid in self.fresh_index:
+                #logger.info("hear 760")
                 sims_fresh = self.fresh_index.sims_by_id(docid)
                 if self.opt_index is not None:
+                    #logger.info("hear 763")
                     vec = self.fresh_index.vec_by_id(docid)
                     sims_opt = self.opt_index.sims_by_vec(vec, normalize=False)
             else:
